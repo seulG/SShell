@@ -5,106 +5,22 @@
 #include <pwd.h>
 #include <sys/wait.h>
 
-#define READ_BUFFER 1024
+#define READFROMSTD_BUFFER 512
 #define PARAS_BUFFER 20
-#define STR_TOK " "
 
-char *gsh_read_line(){
-    int bufsize = READ_BUFFER;
-    int position = 0;
-    char *buffer = (char *) malloc(sizeof(char) * bufsize);
-    int c;
+typedef struct CNode {
+    char *cmdName;
+    char **paras;
+    char *inReDir;
+    char *outRedir;
+    int flag;
+    struct CNode *next;
+} CNode, *node;
 
-    if(!buffer) {
-        fprintf(stderr,"内存分配失败\n");
-        return 0;
-    }
+//全局变量记录输入字符个数
+int number;
 
-    while(1) {
-        c = getchar();
-        if(c==EOF || c=='\n') {
-            buffer[position] = '\0';
-            return buffer;
-        } else {
-            buffer[position] = c;
-        }
-        position++;
-
-        if(position >= bufsize) {
-            bufsize = bufsize + READ_BUFFER;
-            buffer = (char *)realloc(buffer,bufsize);
-            if(!buffer){
-                fprintf(stderr,"内存分配失败\n");
-                return 0;
-            }
-        }
-    }
-    return buffer;
-}
-
-
-/*     while(command[i] != '\0') { */
-/*         i++; */
-/*     } */
-/*     return i; */
-/* } */
-
-/* int getlens(char **paras) { */
-/*     int i = 0; */
-/*     while(paras[i]!=NULL) { */
-/*         i++; */
-/*     } */
-/*     return i; */
-/* } */
-
-/* void copychar(char *source ,char *target,int index){ */
-/*     int len = getlen(source); */
-/*     int pos = 0; */
-/*     while(pos < len) { */
-/*         target[index] = source[pos]; */
-/*         index++; */
-/*         pos++; */
-/*         printf("%c\n",target[index]); */
-/*     } */
-/* } */
-
-/* int get_totol_len(char **paras, int start, int end) { */
-/*     int totle = 0; */
-/*     while(start <= end) { */
-/*         totle += getlen(paras[start]); */
-/*         start++; */
-/*     } */
-/*     return totle; */
-/* } */
-
-
-char **split_command(char *command) {
-    int position=0,buffersize=PARAS_BUFFER,mergesize=PARAS_BUFFER,mergepos=0,len;
-    char **paras = (char **)malloc(sizeof(char *) * buffersize);
-    char *para;
-
-    if(!para) {
-        fprintf(stderr,"分配内存失败");
-    }
-
-    para = strtok(command,STR_TOK);
-    while(para != NULL) {
-        paras[position] = para;
-        position++;
-        if(position >= buffersize) {
-            buffersize+=PARAS_BUFFER;
-            paras = (char **)realloc(paras,buffersize);
-            if(!paras) {
-                fprintf(stderr,"内存分配失败");
-            }
-        }
-        para = strtok(NULL,STR_TOK);
-    }
-    paras[position] = NULL;
-
-    return paras;
-}
-
+//打印命令提示符部分
 char *get_prompt() {
     struct passwd *pwd;
     char hostname[10];
@@ -117,92 +33,181 @@ char *get_prompt() {
     printf("%s@%s:%s\n%c ",pwd->pw_name,hostname,dir,permission);
 }
 
+//从标准输入中读取，并且初步处理，将空格替换为'\0'
+char *getFromStd() {
+    int bufsize = READFROMSTD_BUFFER;
+    number = 0;
+    char *buffer = (char *) malloc(sizeof(char) * bufsize);
+    int c;
 
-/* 内置命令 */
-
-/* cd */
-int gsh_cd(char **args)
-{
-  if (args[1] == NULL) {
-    fprintf(stderr, "lsh: expected argument to \"cd\"\n");
-  } else {
-    if (chdir(args[1]) != 0) {
-      perror("lsh");
+    if(!buffer) {
+        fprintf(stderr,"内存分配失败\n");
+        return 0;
     }
-  }
-  return 1;
-}
 
-/* exit */
-
-int gsh_exit(char **args)
-{
-  return 0;
-}
-
-char *innercmd[] = {
-    "cd",
-    "exit",
-    "ll"
-};
-
-/* 函数声明 */
-int launch_command(char **paras);
-int launch_innercmd(int i, char **paras);
-
-int command_execute(char **paras) {
-   int i;
-   if(paras[0] == NULL) {
-        return 1;
-   }
-
-   for(i=0;i<sizeof(innercmd)/8;i++) {
-       if(strcmp(innercmd[i],paras[0]) == 0) {
-           return launch_innercmd(i,paras);
-       }
-   }
-   return launch_command(paras);
-}
-/* 执行内部命令 */
-int launch_innercmd(int i, char **paras) {
-    switch(i) {
-    case 0:
-        return gsh_cd(paras);
-        break;
-    case 1:
-        return gsh_exit(paras);
-        break;
-    }
-}
-
-//执行外部命令
-int launch_command(char **paras) {
-    int pid,wpid;
-    int status;
-    pid = fork();
-
-    if(pid == 0) {
-        if(execvp(paras[0],paras) == -1) {
-            perror("error");
+    while(1) {
+        c = getchar();
+        if(c==EOF || c=='\n') {
+            buffer[number] = '\0';
+            return buffer;
+        } else if(c==' ') {
+            buffer[number] = '\0';
+        } else {
+            buffer[number] = c;
         }
-        exit(1);
-    } else if(pid < 0) {
-        perror("命令启动失败");
-    } else {
-        do {
-            wpid = waitpid(pid,&status,0);
-        } while(!WIFEXITED(status) && !WIFSIGNALED(status));
+
+        number++;
+
+        //内存不够时，动态申请更多的内存空间
+        if(number >= bufsize) {
+            bufsize = bufsize + READFROMSTD_BUFFER;
+            buffer = (char *)realloc(buffer,bufsize);
+            if(!buffer){
+                fprintf(stderr,"内存分配失败\n");
+                return 0;
+            }
+        }
     }
-    return 1;
+    return buffer;
+}
+
+
+node creatNode() {
+    node head = (node)malloc(sizeof(CNode));
+    head->cmdName = (char *)malloc(sizeof(char) * PARAS_BUFFER);
+    head->paras = (char **)malloc(sizeof(char *) * PARAS_BUFFER);
+    head->next = NULL;
+    return head;
+}
+
+/* void showLinkList(node head) { */
+/*     node Chead = head; */
+/*     while(Chead->next) { */
+/*         printf("%s",Chead->cmdName); */
+/*         int index = 0; */
+/*         while(1) { */
+/*             printf("%s\n",Chead->paras[index]); */
+/*             index++; */
+/*             if(Chead->paras[index]==NULL || Chead->paras[index] == "") { */
+/*                 break; */
+/*             } */
+/*         } */
+/*     } */
+/*     printf("yes"); */
+
+/* } */
+
+//生成每一条命令的结构体
+node createNode(char *cmdStr,int length) {
+    char *p = cmdStr;
+    //去掉空格和｜
+    while(*p == '|' || *p == '\0') {
+        p++;
+        length--;
+    }
+    printf("%d",length);
+    
+    node cnode = (node)malloc(sizeof(CNode));
+    //经过处理后第一个字符串就是命令名
+    /* cnode->cmdName = p; */
+    printf("%s\n",p);
+
+    int num = 0;
+    int index = 0;
+    while(num < length -1) {
+        if(*p == '>' || *p == '<') {
+            if(*p == '>') {
+                p++;
+                //>>的模式
+                if(*p == '>') {
+                    p++;
+                    printf("%s\n",++p);
+                    /* cnode->outRedir = ++p; */
+                } else if(*p == '\0') { 
+                    //>模式
+                    /* cnode->outRedir = ++p; */
+                    printf("%s\n",++p);
+                }
+            } else {
+                //<<模式
+                if(*p == '<') {
+                    p++;
+                    /* cnode->inReDir = ++p; */
+                    printf("%s\n",++p);
+                } else if(*p == '\0') {
+                    //<模式
+                    /* cnode->inReDir = ++p; */
+                    printf("%s\n",++p);
+                }
+
+            }
+            break;    
+        }
+        
+        //因为一直在操作一个数组，所以要严格控制此处的代码不能越界
+        while(*p != '\0') {
+            p++;
+            num++;
+        }
+        /* cnode->paras[index] = ++p; */
+        p++;
+        //这里会出现越界，而两个程序的链接点为|,因此可以规避
+        if(*p != '|') {
+            printf("%s ",p);
+            index++;
+        }
+        num++;
+    }
+    /* printf("%s\n",cnode->cmdName); */
+    /* int i = 0; */
+    /* while(i<index) { */
+    /*     printf("%s ",cnode->paras[i]); */
+    /*     i++; */
+    /* } */
+    /* printf("\n"); */
+    return cnode;
+}
+
+
+
+
+//简单处理
+int parasHandler(char *subInputStr,int length) {
+    printf("\n");
+    char *p = subInputStr;
+    if(*p == '|') {
+        node cnode = createNode(p,length);
+    } else {
+        node cnode = createNode(p,length);
+    }
+    
+}
+
+//粗粒度切割
+int getSubStr(char *inputStr) {
+    char *p = inputStr;
+    char *a = inputStr;
+    int num = 0,offset = 0;
+    do {
+        if(*p == '|') {
+            parasHandler(a,num-offset);
+            offset = num;
+            a = p;
+        }
+        num++;
+        p++;
+    }while(num < number);
+    parasHandler(a,number-offset);
 }
 
 int main()
 {
     int yes;
     do {
-        get_prompt();
-        char *command = gsh_read_line();
-        char **paras = split_command(command);
-        yes = command_execute(paras);
+        /* get_prompt(); */
+        printf("> ");
+        
+        char *inputStr = getFromStd();
+        getSubStr(inputStr); 
     } while(yes);
 }
