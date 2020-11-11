@@ -7,12 +7,13 @@
 
 #define READFROMSTD_BUFFER 512
 #define PARAS_BUFFER 20
+#define PARA_BUFFER 124
 
 typedef struct CNode {
-    char *cmdName;
-    char **paras;
-    char *inReDir;
-    char *outRedir;
+    char cmdName[PARA_BUFFER];
+    char *paras[PARAS_BUFFER];  
+    char inReDir[PARA_BUFFER];
+    char outRedir[PARA_BUFFER];
     int flag;
     struct CNode *next;
 } CNode, *node;
@@ -74,8 +75,6 @@ char *getFromStd() {
 
 node creatNode() {
     node head = (node)malloc(sizeof(CNode));
-    head->cmdName = (char *)malloc(sizeof(char) * PARAS_BUFFER);
-    head->paras = (char **)malloc(sizeof(char *) * PARAS_BUFFER);
     head->next = NULL;
     return head;
 }
@@ -105,12 +104,12 @@ node createNode(char *cmdStr,int length) {
         p++;
         length--;
     }
-    printf("%d",length);
     
     node cnode = (node)malloc(sizeof(CNode));
     //经过处理后第一个字符串就是命令名
-    /* cnode->cmdName = p; */
-    printf("%s\n",p);
+    strcpy(cnode->cmdName,p);
+    /* copy(cnode->cmdName,p); */
+    printf("%s\n",cnode->cmdName);
 
     int num = 0;
     int index = 0;
@@ -153,18 +152,23 @@ node createNode(char *cmdStr,int length) {
         p++;
         //这里会出现越界，而两个程序的链接点为|,因此可以规避
         if(*p != '|') {
-            printf("%s ",p);
+            //c里面只有数组才能调用strcpy，char *类型会出现段错误
+            /* strcpy(cnode->paras[index],p); */
+            cnode->paras[index] = p;
+            printf("%s ",cnode->paras[index]);
             index++;
         }
         num++;
     }
+
+    //给参数最后一个指针设置为NULL
+    cnode->paras[index] = NULL; 
     /* printf("%s\n",cnode->cmdName); */
     /* int i = 0; */
     /* while(i<index) { */
     /*     printf("%s ",cnode->paras[i]); */
     /*     i++; */
     /* } */
-    /* printf("\n"); */
     return cnode;
 }
 
