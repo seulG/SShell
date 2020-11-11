@@ -56,9 +56,7 @@ char *getFromStd() {
         } else {
             buffer[number] = c;
         }
-
         number++;
-
         //内存不够时，动态申请更多的内存空间
         if(number >= bufsize) {
             bufsize = bufsize + READFROMSTD_BUFFER;
@@ -79,70 +77,50 @@ node creatNode() {
     return head;
 }
 
-/* void showLinkList(node head) { */
-/*     node Chead = head; */
-/*     while(Chead->next) { */
-/*         printf("%s",Chead->cmdName); */
-/*         int index = 0; */
-/*         while(1) { */
-/*             printf("%s\n",Chead->paras[index]); */
-/*             index++; */
-/*             if(Chead->paras[index]==NULL || Chead->paras[index] == "") { */
-/*                 break; */
-/*             } */
-/*         } */
-/*     } */
-/*     printf("yes"); */
-
-/* } */
-
 //生成每一条命令的结构体
 node createNode(char *cmdStr,int length) {
     char *p = cmdStr;
     //去掉空格和｜
+    node cnode = (node)malloc(sizeof(CNode));
+
     while(*p == '|' || *p == '\0') {
         p++;
         length--;
+        //标记上一条命令启用了管道
+        cnode->flag = 1;
     }
     
-    node cnode = (node)malloc(sizeof(CNode));
     //经过处理后第一个字符串就是命令名
     strcpy(cnode->cmdName,p);
-    /* copy(cnode->cmdName,p); */
-    printf("%s\n",cnode->cmdName);
 
     int num = 0;
     int index = 0;
+    int flag = 0;
     while(num < length -1) {
         if(*p == '>' || *p == '<') {
+            //标记位，不再继续向paras里面存入参数
+            flag = 1;
             if(*p == '>') {
                 p++;
                 //>>的模式
                 if(*p == '>') {
                     p++;
-                    printf("%s\n",++p);
-                    /* cnode->outRedir = ++p; */
+                    strcpy(cnode->outRedir,++p);
                 } else if(*p == '\0') { 
                     //>模式
-                    /* cnode->outRedir = ++p; */
-                    printf("%s\n",++p);
+                    strcpy(cnode->outRedir,++p);
                 }
             } else {
                 //<<模式
                 if(*p == '<') {
                     p++;
-                    /* cnode->inReDir = ++p; */
-                    printf("%s\n",++p);
+                    strcpy(cnode->inReDir,++p);
                 } else if(*p == '\0') {
-                    //<模式
-                    /* cnode->inReDir = ++p; */
-                    printf("%s\n",++p);
+                    strcpy(cnode->inReDir,++p);
                 }
 
             }
-            break;    
         }
-        
         //因为一直在操作一个数组，所以要严格控制此处的代码不能越界
         while(*p != '\0') {
             p++;
@@ -151,67 +129,94 @@ node createNode(char *cmdStr,int length) {
         /* cnode->paras[index] = ++p; */
         p++;
         //这里会出现越界，而两个程序的链接点为|,因此可以规避
-        if(*p != '|') {
+        //并且当遇到重定向就可以停止向paras写入参数了
+        if(*p != '|' && flag == 0 && *p != '>' && *p != '<') {
             //c里面只有数组才能调用strcpy，char *类型会出现段错误
             /* strcpy(cnode->paras[index],p); */
             cnode->paras[index] = p;
-            printf("%s ",cnode->paras[index]);
             index++;
         }
         num++;
     }
-
     //给参数最后一个指针设置为NULL
     cnode->paras[index] = NULL; 
-    /* printf("%s\n",cnode->cmdName); */
-    /* int i = 0; */
-    /* while(i<index) { */
-    /*     printf("%s ",cnode->paras[i]); */
-    /*     i++; */
-    /* } */
     return cnode;
 }
 
-
-
-
-//简单处理
-int parasHandler(char *subInputStr,int length) {
-    printf("\n");
-    char *p = subInputStr;
-    if(*p == '|') {
-        node cnode = createNode(p,length);
-    } else {
-        node cnode = createNode(p,length);
+//展示单个节点的信息
+void showNode(node cnode) {
+    int index = 0;
+    printf("命令名：%s\n",cnode->cmdName);
+    while(cnode->paras[index]) {
+        printf("参数%d为：%s\n",index,cnode->paras[index++]);
     }
-    
+    printf("输入文件：%s\n",cnode->inReDir);
+    printf("输出文件：%s\n",cnode->outRedir);
+    printf("flag：%d\n",cnode->flag);
+    printf("#########\n");
 }
 
-//粗粒度切割
-int getSubStr(char *inputStr) {
+void showLinkList(node head) {
+    node p;
+    if(head->next)
+        p = head->next;
+    while(p) {
+        showNode(p);
+        p = p->next;
+    }
+}
+
+//emm主要用来弥补我不太合理的设计
+node parasHandler(char *subInputStr,int length) {
+    char *p = subInputStr;
+    node cnode;
+    if(*p == '|') {
+        cnode = createNode(p,length);
+    } else {
+        cnode = createNode(p,length);
+    }
+    return cnode;
+}
+
+//粗粒度切割,组装链表
+node getSubStr(char *inputStr) {
+    if(*inputStr == '\0'){
+        printf("%c\n",*inputStr);
+        return NULL;
+    }
     char *p = inputStr;
     char *a = inputStr;
     int num = 0,offset = 0;
+    node head = (node)malloc(sizeof(CNode));
+    node np = head,cnode;
     do {
         if(*p == '|') {
-            parasHandler(a,num-offset);
+            cnode  = parasHandler(a,num-offset);
+            np->next = cnode;
+            np = np->next;
             offset = num;
             a = p;
         }
         num++;
         p++;
     }while(num < number);
-    parasHandler(a,number-offset);
+    cnode  = parasHandler(a,num-offset);
+    np->next = cnode;
+    return head;
 }
 
 int main()
 {
-    int yes;
+    int yes = 1;
     do {
         /* get_prompt(); */
         printf("> ");
         
         char *inputStr = getFromStd();
-        getSubStr(inputStr); 
+        node head = getSubStr(inputStr); 
+        if(head == NULL) {
+            continue;
+        }
+        showLinkList(head);
     } while(yes);
 }
