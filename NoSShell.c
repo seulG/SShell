@@ -80,21 +80,21 @@ node creatNode() {
 //生成每一条命令的结构体
 node createNode(char *cmdStr,int length) {
     char *p = cmdStr;
+    char *t = cmdStr;
     //去掉空格和｜
     node cnode = (node)malloc(sizeof(CNode));
 
     while(*p == '|' || *p == '\0') {
         p++;
         length--;
-        //标记上一条命令启用了管道
-        cnode->flag = 1;
     }
     
     //经过处理后第一个字符串就是命令名
     strcpy(cnode->cmdName,p);
-
-    int num = 0;
     int index = 0;
+    cnode->paras[index] = p;
+    index++;
+    int num = 0;
     int flag = 0;
     while(num < length -1) {
         if(*p == '>' || *p == '<') {
@@ -126,15 +126,17 @@ node createNode(char *cmdStr,int length) {
             p++;
             num++;
         }
-        /* cnode->paras[index] = ++p; */
         p++;
         //这里会出现越界，而两个程序的链接点为|,因此可以规避
         //并且当遇到重定向就可以停止向paras写入参数了
         if(*p != '|' && flag == 0 && *p != '>' && *p != '<') {
             //c里面只有数组才能调用strcpy，char *类型会出现段错误
-            /* strcpy(cnode->paras[index],p); */
-            cnode->paras[index] = p;
-            index++;
+            if(*p != '\0') {
+                cnode->paras[index] = p;
+                index++;
+            }
+            /* cnode->paras[index] = p; */
+            /* index++; */
         }
         num++;
     }
@@ -202,7 +204,97 @@ node getSubStr(char *inputStr) {
     }while(num < number);
     cnode  = parasHandler(a,num-offset);
     np->next = cnode;
+
     return head;
+}
+
+//内置命令数组
+char *innerCmd[] = {
+    "sexit"
+};
+
+//设置管道和重定向
+void setIO(node cnode,int readfd, int writefd) {
+    if(readfd != STDIN_FILENO) {
+        dup2(readfd,STDIN_FILENO);
+        close(readfd);
+    }
+    if(writefd != STDOUT_FILENO) {
+        dup2(readfd,STDOUT_FILENO);
+        close(writefd);
+    }
+}
+
+//处理外置命令
+int execOuterCmd(node cnode) {
+    //只剩一条外置命令,或者只有一条命令
+    if(!cnode->next) {
+        setIO(cnode,STDIN_FILENO,STDOUT_FILENO);
+        execvp(cnode->cmdName,cnode->paras);
+    }
+    //获取两个文件描述符号
+    int fd[2];
+    pipe(fd);
+    int rc = fork();
+
+    if(rc < 0) {
+        fprintf(stderr,"fork failed\n");
+        return 0;
+    } else if(rc == 0){
+        close(fd[0]);
+        setIO(cnode,STDIN_FILENO,fd[1]);
+        execvp(cnode->cmdName,cnode->paras);
+    } else {
+        wait(NULL);
+        cnode = cnode->next;
+        close(fd[1]);
+        setIO(cnode,fd[0],STDOUT_FILENO);
+        execOuterCmd(cnode);
+    }
+
+    return 1;
+}
+
+//内置命令退出
+int sexit() {
+    return 0;
+}
+
+//处理内置命令
+int execInnerCmd(int index) {
+    switch(index) {
+    case 0:
+        return sexit();
+        break;
+    } 
+}
+
+//预处理，
+int preExec(node head) {
+    node p;
+    if(head->next) {
+        p = head->next;
+    } else {
+        return 0;
+    }
+    for(int i=0;i<1;i++) {
+        if(strcmp(innerCmd[i],p->cmdName) == 0) {
+            return execInnerCmd(i);
+        }
+    }
+    //不在内置命令列表，则去执行外置命令
+    int flag = 1;
+    int pid = fork();
+    if(pid <0) {
+        fprintf(stderr,"fork failed\n");
+        return 0;
+    } else if(pid == 0) {
+        flag = execOuterCmd(p);
+    } else {
+        wait(NULL);
+    }
+    
+    return flag;
 }
 
 int main()
@@ -217,6 +309,6 @@ int main()
         if(head == NULL) {
             continue;
         }
-        showLinkList(head);
+        yes = preExec(head);
     } while(yes);
 }
