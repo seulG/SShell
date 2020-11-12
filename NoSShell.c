@@ -9,6 +9,7 @@
 #define READFROMSTD_BUFFER 512
 #define PARAS_BUFFER 20
 #define PARA_BUFFER 124
+#define RWRWRW (S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH)
 
 typedef struct CNode {
     char cmdName[PARA_BUFFER];
@@ -21,19 +22,6 @@ typedef struct CNode {
 
 //全局变量记录输入字符个数
 int number;
-
-//打印命令提示符部分
-char *get_prompt() {
-    struct passwd *pwd;
-    char hostname[10];
-    char dir[1024];
-    char permission;
-    gethostname(hostname,sizeof(hostname));
-    getcwd(dir,sizeof(dir));
-    permission = (getuid()==0) ? '#' : '$';
-    pwd = getpwuid(getuid());
-    printf("%s@%s:%s\n%c ",pwd->pw_name,hostname,dir,permission);
-}
 
 //从标准输入中读取，并且初步处理，将空格替换为'\0'
 char *getFromStd() {
@@ -106,22 +94,22 @@ node createNode(char *cmdStr,int length) {
                 //>>的模式
                 if(*p == '>') {
                     p++;
-                    strcpy(cnode->outRedir,++p);
                     cnode->flag = 2;
+                    strcpy(cnode->outRedir,++p);
                 } else if(*p == '\0') { 
                     //>模式
-                    strcpy(cnode->outRedir,++p);
                     cnode->flag = 1;
+                    strcpy(cnode->outRedir,++p);
                 }
             } else {
                 //<<模式
                 if(*p == '<') {
                     p++;
+                    cnode->flag = -1;
                     strcpy(cnode->inReDir,++p); 
-                    cnode->flag = -1;
                 } else if(*p == '\0') {
-                    strcpy(cnode->inReDir,++p);
                     cnode->flag = -1;
+                    strcpy(cnode->inReDir,++p);
                 }
 
             }
@@ -224,7 +212,7 @@ void setIO(node cnode,int readfd, int writefd) {
         int flag;
         if(cnode->flag == 1) flag = O_WRONLY|O_TRUNC|O_CREAT; // >
         else flag = O_WRONLY|O_APPEND|O_CREAT; //>>
-        int wport = open(cnode->outRedir,flag);
+        int wport = open(cnode->outRedir,flag,RWRWRW);
         dup2(wport,STDOUT_FILENO);
     }
     if(cnode->flag < 0) { //< <<
@@ -261,12 +249,15 @@ int execOuterCmd(node cnode) {
         return 0;
     } else if(rc == 0){
         close(fd[0]);
+        //将输出绑定到管道写端
         setIO(cnode,STDIN_FILENO,fd[1]);
         execvp(cnode->cmdName,cnode->paras);
     } else {
         wait(NULL);
+        //递归调用每一个命令
         cnode = cnode->next;
         close(fd[1]);
+        //将输入绑定到管道读端
         setIO(cnode,fd[0],STDOUT_FILENO);
         execOuterCmd(cnode);
     }
@@ -319,11 +310,13 @@ int preExec(node head) {
 int main()
 {
     int yes = 1;
+    char *prompt;
     do {
-        /* get_prompt(); */
-        printf("> ");
-        
-        char *inputStr = getFromStd();
+        printf("%c ",'>');
+        char *inputStr;
+        fflush(stdin);
+        inputStr = getFromStd();
+
         node head = getSubStr(inputStr); 
         if(head == NULL) {
             continue;
