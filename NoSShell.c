@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <pwd.h>
 #include <sys/wait.h>
 
@@ -106,17 +107,21 @@ node createNode(char *cmdStr,int length) {
                 if(*p == '>') {
                     p++;
                     strcpy(cnode->outRedir,++p);
+                    cnode->flag = 2;
                 } else if(*p == '\0') { 
                     //>模式
                     strcpy(cnode->outRedir,++p);
+                    cnode->flag = 1;
                 }
             } else {
                 //<<模式
                 if(*p == '<') {
                     p++;
-                    strcpy(cnode->inReDir,++p);
+                    strcpy(cnode->inReDir,++p); 
+                    cnode->flag = -1;
                 } else if(*p == '\0') {
                     strcpy(cnode->inReDir,++p);
+                    cnode->flag = -1;
                 }
 
             }
@@ -215,12 +220,26 @@ char *innerCmd[] = {
 
 //设置管道和重定向
 void setIO(node cnode,int readfd, int writefd) {
+    if(cnode->flag > 0) {
+        int flag;
+        if(cnode->flag == 1) flag = O_WRONLY|O_TRUNC|O_CREAT; // >
+        else flag = O_WRONLY|O_APPEND|O_CREAT; //>>
+        int wport = open(cnode->outRedir,flag);
+        dup2(wport,STDOUT_FILENO);
+    }
+    if(cnode->flag < 0) { //< <<
+        int rport = open(cnode->inReDir,O_RDONLY);
+        dup2(rport,STDIN_FILENO);
+        close(rport);
+    }
+
+
     if(readfd != STDIN_FILENO) {
         dup2(readfd,STDIN_FILENO);
         close(readfd);
     }
     if(writefd != STDOUT_FILENO) {
-        dup2(readfd,STDOUT_FILENO);
+        dup2(writefd,STDOUT_FILENO);
         close(writefd);
     }
 }
